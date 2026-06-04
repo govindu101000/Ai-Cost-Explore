@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Cloud Cost Detective - Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .main-content {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+            padding: 20px 40px;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .sidebar {
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 1px solid #e2e8f0;
+        }
+        .card h2 {
+            font-size: 18px;
+            color: #1e293b;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eef2ff;
+        }
+        .card h3 {
+            font-size: 16px;
+            color: #2d3748;
+            margin-top: 15px;
+            margin-bottom: 10px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .status-badge.online {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-badge.offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            margin-bottom: 10px;
+        }
+        input, select {
+            background: #f8f9fa;
+            color: #1a202c;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        button:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .button-group button {
+            margin-bottom: 0;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .info-item {
+            background: #eef2ff;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+        .info-item label {
+            font-size: 12px;
+            color: #667eea;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .info-item .value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #2d3748;
+        }
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: inherit;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #1a202c;
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .log-output {
+            background: #0f172a;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 12px;
+            max-height: 250px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        .log-entry {
+            margin-bottom: 6px;
+        }
+        .live-status {
+            padding: 14px;
+            border-radius: 8px;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1e293b;
+            font-weight: 500;
+        }
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+            margin-top: 12px;
+        }
+        .result-card {
+            background: #f8f9fa;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 14px;
+            overflow-y: auto;
+            max-height: 280px;
+        }
+        .result-card h4 {
+            font-size: 13px;
+            color: #667eea;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .result-card .value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #2d3748;
+        }
+        .result-summary {
+            margin-top: 10px;
+            color: #1a202c;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .grid-2col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 1200px) {
+            .main-content {
+                flex-direction: column;
+                padding: 15px 20px;
+            }
+            .sidebar {
+                width: 100%;
+            }
+            .grid-2col {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🔍 AI Cloud Cost Detective</h1>
+        <p>Real-time Azure resource analysis & cost optimization</p>
+    </header>
+
+    <div class="main-content">
+        <!-- Sidebar: Auth & Controls -->
+        <div class="sidebar">
+            <!-- Status -->
+            <div class="card">
+                <h2>System Status</h2>
+                <div id="statusDiv" class="status-badge offline">
+                    <span id="statusText">Checking...</span>
+                </div>
+                <small id="statusDetail" style="color: #667eea; display: block; margin-top: 10px;">Status: offline</small>
+            </div>
+
+            <!-- Authentication -->
+            <div class="card">
+                <h2>Authentication</h2>
+                <input type="email" id="signupEmail" placeholder="Email" value="test@example.com">
+                <input type="password" id="signupPassword" placeholder="Password" value="password123">
+                <div class="button-group">
+                    <button onclick="signup()">Sign Up</button>
+                    <button onclick="login()">Log In</button>
+                </div>
+                <div id="authOutput" class="output"></div>
+            </div>
+
+            <!-- Resource Groups -->
+            <div class="card">
+                <h2>Resource Groups</h2>
+                <button onclick="getResourceGroups()" id="groupsBtn" disabled style="margin-bottom: 0;">Refresh Groups</button>
+                <div id="groupsOutput" class="output" style="margin-top: 10px;"></div>
+            </div>
+        </div>
+
+        <!-- Main Area: Analysis & Results -->
+        <div class="main-area">
+            <!-- Select & Analyze -->
+            <div class="card">
+                <h2>Select & Analyze</h2>
+                <label for="resourceGroupSelect" style="display: block; margin-bottom: 8px; color: #667eea; font-weight: 600;">Resource Group</label>
+                <select id="resourceGroupSelect">
+                    <option value="">Loading groups...</option>
+                </select>
+                <input type="text" id="customResourceGroup" placeholder="Enter custom resource group name" style="display:none;">
+                <div id="groupDetails" class="output" style="margin-top: 10px;"></div>
+                <button onclick="analyzeGroup()" id="analyzeBtn" disabled>Analyze Selected Group</button>
+                <div id="analyzeOutput" class="output" style="margin-top: 10px;"></div>
+            </div>
+
+            <!-- Live Analysis -->
+            <div class="grid-2col">
+                <div class="card">
+                    <h2>Live Analysis Status</h2>
+                    <div id="liveStatus" class="live-status">No analysis running.</div>
+                </div>
+                <div class="card">
+                    <h2>Live Progress Log</h2>
+                    <div id="liveLog" class="log-output"><div class="log-entry">No live progress yet.</div></div>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div class="card">
+                <h2>Latest Result</h2>
+                <div id="resultsOutput" class="result-card" style="max-height: 400px;">No analysis run yet.</div>
+            </div>
+
+            <!-- History -->
+            <div class="card">
+                <h2>Analysis History</h2>
+                <button onclick="getHistory()" id="historyBtn" disabled>Load History</button>
+                <div id="historyOutput" class="results-grid" style="margin-top: 15px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:8000/api';
+        const WS_BASE = API_URL.replace(/^http/, 'ws').replace(/\/api$/, '');
+        let token = localStorage.getItem('auth_token');
+        let resourceGroups = [];
+        let currentAnalysisId = null;
+        let analysisPollTimer = null;
+        let analysisSocket = null;
+
+        window.addEventListener('load', () => {
+            if (token) {
+                setStatus(true);
+                updateButtonStates();
+                loadResourceGroups(false);
+            } else {
+                checkBackendStatus();
+            }
+
+            const select = document.getElementById('resourceGroupSelect');
+            select.addEventListener('change', setCustomGroupVisibility);
+            document.getElementById('customResourceGroup').addEventListener('input', updateButtonStates);
+        });
+
+        async function checkBackendStatus() {
+            try {
+                const resp = await fetch(API_URL + '/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: 'status@test.com', password: 'test' })
+                });
+                setStatus(true);
+                updateButtonStates();
+                if (token) loadResourceGroups(false);
+            } catch (e) {
+                setStatus(false);
+                output('authOutput', 'error', `Backend offline: ${e.message}`);
+            }
+        }
+
+        function setStatus(online) {
+            const div = document.getElementById('statusDiv');
+            const detail = document.getElementById('statusDetail');
+            if (online) {
+                div.className = 'status-badge online';
+                div.innerHTML = '✓ Online';
+                detail.textContent = 'Status: connected';
+            } else {
+                div.className = 'status-badge offline';
+                div.innerHTML = '✗ Offline';
+                detail.textContent = 'Status: disconnected';
+            }
+        }
+
+        function updateButtonStates() {
+            const hasToken = !!token;
+            document.getElementById('groupsBtn').disabled = !hasToken;
+            document.getElementById('analyzeBtn').disabled = !hasToken || !getSelectedResourceGroup();
+            document.getElementById('historyBtn').disabled = !hasToken;
+        }
+
+        async function signup() {
+            const email = document.getElementById('signupEmail').value;
+            const password = document.getElementById('signupPassword').value;
+            try {
+                const resp = await fetch(API_URL + '/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    token = data.token;
+                    localStorage.setItem('auth_token', token);
+                    output('authOutput', 'success', `✓ Signup success!\nUser ID: ${data.user_id}`);
+                    updateButtonStates();
+                    loadResourceGroups();
+                } else {
+                    output('authOutput', 'error', `✗ Signup failed: ${data.detail}`);
+                }
+            } catch (e) {
+                output('authOutput', 'error', `✗ Error: ${e.message}`);
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('signupEmail').value;
+            const password = document.getElementById('signupPassword').value;
+            try {
+                const resp = await fetch(API_URL + '/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    token = data.token;
+                    localStorage.setItem('auth_token', token);
+                    output('authOutput', 'success', `✓ Login success!\nUser ID: ${data.user_id}`);
+                    updateButtonStates();
+                    loadResourceGroups();
+                } else {
+                    output('authOutput', 'error', `✗ Login failed: ${data.detail}`);
+                }
+            } catch (e) {
+                output('authOutput', 'error', `✗ Error: ${e.message}`);
+            }
+        }
+
+        async function loadResourceGroups(showOutput = true) {
+            if (!token) return output('groupsOutput', 'error', '✗ Not authenticated');
+            try {
+                const resp = await fetch(API_URL + '/resource-groups', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    resourceGroups = (data.resource_groups || []).map(normalizeResourceGroup);
+                    populateResourceGroupSelect(resourceGroups);
+                    updateButtonStates();
+                    if (showOutput) {
+                        output('groupsOutput', 'success', `✓ Found ${resourceGroups.length} groups`);
+                    }
+                } else {
+                    output('groupsOutput', 'error', `✗ Failed: ${data.detail}`);
+                }
+            } catch (e) {
+                output('groupsOutput', 'error', `✗ Error: ${e.message}`);
+            }
+        }
+
+        function normalizeResourceGroup(group) {
+            if (!group) return { name: '', location: '', id: '', tags: {} };
+            if (typeof group === 'string') {
+                return { name: group, location: '', id: '', tags: {} };
+            }
+            return {
+                name: group.name || '',
+                location: group.location || '',
+                id: group.id || '',
+                tags: group.tags || {},
+            };
+        }
+
+        function populateResourceGroupSelect(groups) {
+            const select = document.getElementById('resourceGroupSelect');
+            select.innerHTML = '';
+            select.appendChild(new Option('-- Select a resource group --', ''));
+            groups.forEach((group) => {
+                const label = `${group.name}${group.location ? ' (' + group.location + ')' : ''}`;
+                const option = new Option(label, group.name);
+                select.appendChild(option);
+            });
+            select.appendChild(new Option('Use custom resource group', '__custom__'));
+            select.value = '';
+            setCustomGroupVisibility();
+        }
+
+        function setCustomGroupVisibility() {
+            const select = document.getElementById('resourceGroupSelect');
+            const custom = document.getElementById('customResourceGroup');
+            if (select.value === '__custom__') {
+                custom.style.display = 'block';
+            } else {
+                custom.style.display = 'none';
+            }
+            displaySelectedGroupDetails();
+            updateButtonStates();
+        }
+
+        function getSelectedResourceGroup() {
+            const select = document.getElementById('resourceGroupSelect');
+            if (!select) return '';
+            if (select.value === '__custom__') {
+                return document.getElementById('customResourceGroup').value.trim();
+            }
+            return select.value;
+        }
+
+        function displaySelectedGroupDetails() {
+            const select = document.getElementById('resourceGroupSelect');
+            const details = document.getElementById('groupDetails');
+            if (!select || !details) return;
+            if (select.value === '__custom__') {
+                details.innerHTML = 'Custom resource group: enter the name above.';
+                return;
+            }
+            const group = resourceGroups.find((item) => item.name === select.value);
+            if (!group) {
+                details.innerHTML = 'No resource group selected.';
+                return;
+            }
+            const tagText = Object.keys(group.tags || {}).length
+                ? Object.entries(group.tags).map(([k, v]) => `${k}: ${v}`).join(', ')
+                : 'None';
+            details.innerHTML = `<strong>${group.name}</strong> | ${group.location || 'Unknown'} | Tags: ${tagText}`;
+        }
+
+        async function getResourceGroups() {
+            await loadResourceGroups(true);
+        }
+
+        function clearLiveLog() {
+            const liveLog = document.getElementById('liveLog');
+            liveLog.innerHTML = '<div class="log-entry">No live progress yet.</div>';
+        }
+
+        function appendLiveLog(message) {
+            const liveLog = document.getElementById('liveLog');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = message;
+            liveLog.appendChild(entry);
+            liveLog.scrollTop = liveLog.scrollHeight;
+        }
+
+        function closeProgressSocket() {
+            if (analysisSocket) {
+                analysisSocket.close();
+                analysisSocket = null;
+            }
+        }
+
+        function startProgressSocket(analysisId) {
+            closeProgressSocket();
+            const url = `${WS_BASE}/ws/progress/${analysisId}`;
+            try {
+                analysisSocket = new WebSocket(url);
+            } catch (e) {
+                appendLiveLog('WebSocket not available: ' + e.message);
+                return;
+            }
+
+            clearLiveLog();
+            appendLiveLog(`Connected to live progress for analysis ${analysisId}`);
+
+            analysisSocket.onmessage = (event) => {
+                appendLiveLog(event.data);
+            };
+
+            analysisSocket.onopen = () => {
+                appendLiveLog('WebSocket connected. Listening for live progress...');
+            };
+
+            analysisSocket.onclose = () => {
+                appendLiveLog('WebSocket connection closed.');
+            };
+
+            analysisSocket.onerror = (event) => {
+                appendLiveLog('WebSocket error.');
+            };
+        }
+
+        function startAnalysisPoll(analysisId, resourceGroup) {
+            currentAnalysisId = analysisId;
+            if (analysisPollTimer) {
+                clearInterval(analysisPollTimer);
+            }
+            closeProgressSocket();
+            startProgressSocket(analysisId);
+            document.getElementById('liveStatus').innerHTML = `<strong>Analysis started for ${resourceGroup}</strong><br>ID: ${analysisId} | Status: running`;
+            analysisPollTimer = setInterval(() => refreshAnalysisStatus(), 3000);
+            refreshAnalysisStatus();
+        }
+
+        async function refreshAnalysisStatus() {
+            if (!currentAnalysisId) return;
+            try {
+                const resp = await fetch(API_URL + '/history', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await resp.json();
+                if (!resp.ok || !Array.isArray(data.history)) return;
+                const entry = data.history.find((item) => item.id === currentAnalysisId);
+                if (!entry) return;
+                const statusLine = `Resource group: <strong>${entry.resource_group}</strong> | ID: <strong>${entry.id}</strong> | Status: <strong>${entry.status}</strong>`;
+                if (entry.status === 'running') {
+                    document.getElementById('liveStatus').innerHTML = `Analysis in progress<br>${statusLine}`;
+                } else if (entry.status === 'complete') {
+                    clearInterval(analysisPollTimer);
+                    analysisPollTimer = null;
+                    currentAnalysisId = null;
+                    document.getElementById('liveStatus').innerHTML = `✓ Analysis complete<br>${statusLine}`;
+                    closeProgressSocket();
+                    renderHistory(data.history);
+                } else if (entry.status === 'failed') {
+                    clearInterval(analysisPollTimer);
+                    analysisPollTimer = null;
+                    currentAnalysisId = null;
+                    document.getElementById('liveStatus').innerHTML = `✗ Analysis failed<br>${statusLine}`;
+                    closeProgressSocket();
+                    renderHistory(data.history);
+                }
+            } catch (e) {
+                console.error('Status refresh failed', e);
+            }
+        }
+
+        async function analyzeGroup() {
+            if (!token) return output('analyzeOutput', 'error', '✗ Not authenticated');
+            const rg = getSelectedResourceGroup();
+            if (!rg) return output('analyzeOutput', 'error', '✗ Please select or enter a resource group.');
+            try {
+                const resp = await fetch(API_URL + '/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ resource_group: rg })
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    output('analyzeOutput', 'success', `✓ Analysis started for ${rg}!`);
+                    startAnalysisPoll(data.analysis_id, rg);
+                } else {
+                    output('analyzeOutput', 'error', `✗ Failed: ${data.detail}`);
+                }
+            } catch (e) {
+                output('analyzeOutput', 'error', `✗ Error: ${e.message}`);
+            }
+        }
+
+        async function getHistory() {
+            if (!token) return output('historyOutput', 'error', '✗ Not authenticated');
+            try {
+                const resp = await fetch(API_URL + '/history', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    if (Array.isArray(data.history) && data.history.length) {
+                        renderHistory(data.history);
+                    } else {
+                        document.getElementById('historyOutput').innerHTML = '<div class="result-card">No analysis history found yet.</div>';
+                    }
+                } else {
+                    output('historyOutput', 'error', `✗ Failed: ${data.detail}`);
+                }
+            } catch (e) {
+                output('historyOutput', 'error', `✗ Error: ${e.message}`);
+            }
+        }
+
+        function renderHistory(history) {
+            const resultsDiv = document.getElementById('resultsOutput');
+            const historyDiv = document.getElementById('historyOutput');
+            const cards = history.map((item, index) => {
+                const status = item.status || 'unknown';
+                const summary = item.analysis_result ? item.analysis_result.summary || 'No summary.' : 'Running...';
+                const savings = item.estimated_savings || 'Pending';
+                const issues = item.analysis_result && Array.isArray(item.analysis_result.issues) ? item.analysis_result.issues.length : 0;
+                const error = item.analysis_result && item.analysis_result.error ? `<div style="color: #dc3545; margin-top: 8px;"><strong>Error:</strong> ${item.analysis_result.error}</div>` : '';
+                return `
+                    <div class="result-card">
+                        <h4>${item.resource_group}</h4>
+                        <div class="info-grid" style="margin-bottom: 10px;">
+                            <div class="info-item">
+                                <label>Status</label>
+                                <div class="value">${status}</div>
+                            </div>
+                            <div class="info-item">
+                                <label>Scanned</label>
+                                <div class="value">${item.resources_scanned || 0}</div>
+                            </div>
+                            <div class="info-item">
+                                <label>Issues</label>
+                                <div class="value">${item.issues_found || issues}</div>
+                            </div>
+                        </div>
+                        <div class="result-summary"><strong>Summary:</strong> ${summary}</div>
+                        <div class="result-summary"><strong>Savings:</strong> $${savings}</div>
+                        ${error}
+                        ${item.analysis_result ? formatAnalysisResult(item.analysis_result) : ''}
+                    </div>`;
+            });
+            resultsDiv.innerHTML = cards[0] || '<div class="result-card">No analysis results yet.</div>';
+            historyDiv.innerHTML = cards.length > 0 ? cards.join('') : '<div class="result-card">No analysis history.</div>';
+        }
+
+        function formatAnalysisResult(result) {
+            if (!result || !result.issues || !result.issues.length) return '';
+            let html = '<div class="result-summary"><strong>Top issues:</strong><ol style="margin-left: 20px; margin-top: 5px;">';
+            result.issues.slice(0, 3).forEach((issue) => {
+                html += `<li>${issue.resource || 'Unknown'} - ${issue.severity || 'medium'}</li>`;
+            });
+            html += '</ol></div>';
+            return html;
+        }
+
+        function output(elementId, type, text) {
+            const div = document.getElementById(elementId);
+            div.innerHTML = `<span class="${type}">${text}</span>`;
+        }
+    </script>
+</body>
+</html>
