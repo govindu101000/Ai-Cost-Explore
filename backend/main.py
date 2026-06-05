@@ -1,195 +1,303 @@
-import os
-import traceback
-from dotenv import load_dotenv
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    Header,
+    WebSocket
+)
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
-
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
 import asyncio
+import uuid
 
-from backend.azure_scanner import (
-    list_resource_groups,
-    scan_resource_group,
-    AzNotInstalled,
-    AzNotLoggedIn,
-    ResourceGroupNotFound,
-    AzureCLIError,
+# ------------------------
+# AUTH MODULE
+# ------------------------
+
+from auth import (
+    hash_password,
+    verify_password,
+    create_token,
+    decode_token
 )
-from backend.ai_analyzer import analyze_with_ai, OpenAIError
-from backend import db
-from backend.auth import router as auth_router, get_current_user
 
+# ------------------------
+# DB MODULE
+# ------------------------
 
-app = FastAPI()
+from db import (
+    init_db,
+    create_user,
+    get_user_by_email,
+    get_analysis_history,
+    get_analysis_by_id,
+    save_analysis
+)
+
+# ------------------------
+# AZURE + AI MODULES
+# ------------------------
+
+from azure_scanner import (
+    get_resource_groups,
+    get_resources
+)
+
+from ai_analyzer import (
+    analyze_resources
+)
+
+# ------------------------
+# WEBSOCKET
+# ------------------------
+
+from websocket_manager import manager
+
+# ------------------------
+# APP INIT
+# ------------------------
+
+app = FastAPI(title="AI Cloud Cost Detective")
+
+# ------------------------
+# CORS
+# ------------------------
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
-app.include_router(auth_router, prefix="/api/auth")
-
-
-class AnalyzeRequest(BaseModel):
-    resource_group: str
-
-
-ws_connections = {}
-
+# ------------------------
+# STARTUP
+# ------------------------
 
 @app.on_event("startup")
 async def startup_event():
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, db.init_db)
+    await init_db()
+
+# ------------------------
+# MODELS
+# ------------------------
+
+class AuthRequest(BaseModel):
+    email: str
+    password: str
 
 
-@app.get("/api/resource-groups")
-def get_resource_groups(current_user: dict = Depends(get_current_user)):
+# ------------------------
+# JWT DEPENDENCY
+# ------------------------
+
+async def get_current_user(
+    authorization: str = Header(...)
+):
     try:
-        groups = list_resource_groups()
-        return {"resource_groups": groups}
-    except AzNotInstalled:
-        raise HTTPException(status_code=500, detail="Azure CLI not installed")
-    except AzNotLoggedIn:
-        raise HTTPException(status_code=401, detail="Azure CLI not logged in. Run 'az login'.")
-    except AzureCLIError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        token = authorization.replace("Bearer ", "")
+        return decode_token(token)
 
-
-@app.post("/api/analyze")
-async def analyze(req: AnalyzeRequest, current_user: dict = Depends(get_current_user)):
-    user_id = current_user["id"]
-
-    try:
-        # create initial DB row (status running)
-        analysis_id = await asyncio.get_running_loop().run_in_executor(
-            None, db.save_analysis, user_id, req.resource_group
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token"
         )
 
-        async def background_work(aid: int, rg: str, uid: int):
-            async def send_progress(msg: str):
-                ws = ws_connections.get(str(aid))
-                if ws:
-                    try:
-                        await ws.send_text(msg)
-                    except Exception:
-                        pass
 
-            try:
-                await send_progress("Fetching resource groups...")
+# ------------------------
+# ROOT
+# ------------------------
 
-                resources = await asyncio.get_running_loop().run_in_executor(None, scan_resource_group, rg)
+@app.get("/")
+def root():
+    return {"status": "running"}
 
-                await send_progress(f"Scanning resources in {rg}...")
-                await send_progress("Analyzing costs with AI...")
 
-                analysis = await asyncio.get_running_loop().run_in_executor(None, analyze_with_ai, resources)
+# ------------------------
+# AUTH
+# ------------------------
 
-                await send_progress("Storing results...")
+@app.post("/api/auth/signup")
+async def signup(request: AuthRequest):
 
-                resources_scanned = len(resources)
-                issues_found = 0
-                estimated_savings = None
-                if isinstance(analysis, dict):
-                    issues = analysis.get("issues") or []
-                    issues_found = len(issues)
-                    estimated_savings = str(analysis.get("estimated_savings"))
+    existing = await get_user_by_email(request.email)
 
-                await asyncio.get_running_loop().run_in_executor(
-                    None,
-                    db.update_analysis_if_running,
-                    aid,
-                    **{
-                        "resources_scanned": resources_scanned,
-                        "issues_found": issues_found,
-                        "estimated_savings": estimated_savings,
-                        "analysis_result": analysis,
-                        "status": "complete",
-                    },
-                )
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="User already exists"
+        )
 
-                await send_progress("Analysis complete")
-            except ResourceGroupNotFound:
-                await send_progress("Resource group not found")
-                await asyncio.get_running_loop().run_in_executor(
-                    None,
-                    db.update_analysis_if_running,
-                    aid,
-                    status="failed",
-                    analysis_result={"error": "Resource group not found"},
-                )
-            except OpenAIError as e:
-                await send_progress(f"AI analysis failed: {str(e)}")
-                await asyncio.get_running_loop().run_in_executor(
-                    None,
-                    db.update_analysis_if_running,
-                    aid,
-                    status="failed",
-                    analysis_result={"error": str(e)},
-                )
-            except AzureCLIError as e:
-                await send_progress(f"Azure CLI error: {str(e)}")
-                await asyncio.get_running_loop().run_in_executor(
-                    None,
-                    db.update_analysis_if_running,
-                    aid,
-                    status="failed",
-                    analysis_result={"error": str(e)},
-                )
-            except Exception as e:
-                await send_progress(f"Unexpected error: {str(e)}")
-                traceback.print_exc()
-                await asyncio.get_running_loop().run_in_executor(
-                    None,
-                    db.update_analysis_if_running,
-                    aid,
-                    status="failed",
-                    analysis_result={"error": str(e)},
-                )
+    password_hash = hash_password(request.password)
 
-        # schedule background work and return analysis_id immediately
-        asyncio.create_task(background_work(analysis_id, req.resource_group, user_id))
+    user = await create_user(
+        request.email,
+        password_hash
+    )
 
-        return {"analysis_id": analysis_id}
-    except AzNotInstalled:
-        raise HTTPException(status_code=500, detail="Azure CLI not installed")
-    except AzNotLoggedIn:
-        raise HTTPException(status_code=401, detail="Azure CLI not logged in. Run 'az login'.")
-    except AzureCLIError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    token = create_token(user["id"], user["email"])
 
+    return {
+        "token": token,
+        "email": user["email"]
+    }
+
+
+@app.post("/api/auth/login")
+async def login(request: AuthRequest):
+
+    user = await get_user_by_email(request.email)
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials"
+        )
+
+    if not verify_password(request.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials"
+        )
+
+    token = create_token(user["id"], user["email"])
+
+    return {
+        "token": token,
+        "email": user["email"]
+    }
+
+
+# ------------------------
+# AZURE RESOURCE GROUPS
+# ------------------------
+
+@app.get("/api/resource-groups")
+async def resource_groups(user=Depends(get_current_user)):
+
+    groups = await asyncio.to_thread(get_resource_groups)
+
+    return {
+        "resource_groups": groups
+    }
+
+
+# ------------------------
+# ANALYZE (CORE ENGINE)
+# ------------------------
+
+@app.post("/api/analyze")
+async def analyze(
+    request: dict,
+    user=Depends(get_current_user)
+):
+
+    analysis_id = request.get("analysis_id") or str(uuid.uuid4())
+    rg = request.get("resource_group")
+
+    # Step 1
+    await manager.send_progress(
+        analysis_id,
+        "Fetching Azure resources..."
+    )
+
+    # Step 2 - Azure CLI scan
+    resources = await asyncio.to_thread(
+        get_resources,
+        rg
+    )
+
+    await manager.send_progress(
+        analysis_id,
+        "Analyzing with Llama 3.1..."
+    )
+
+    # Step 3 - AI analysis
+    analysis = await asyncio.to_thread(
+        analyze_resources,
+        resources
+    )
+
+    await manager.send_progress(
+        analysis_id,
+        "Saving results..."
+    )
+
+    # Step 4 - Save DB
+    await save_analysis(
+        user_id=user["user_id"],
+        resource_group=rg,
+        resources_scanned=len(resources),
+        analysis=analysis
+    )
+
+    await manager.send_progress(
+        analysis_id,
+        "Analysis complete"
+    )
+
+    return {
+        "analysis_id": analysis_id,
+        "resource_group": rg,
+        "resources_scanned": len(resources),
+        "analysis": analysis
+    }
+
+
+# ------------------------
+# HISTORY
+# ------------------------
 
 @app.get("/api/history")
-def get_history(current_user: dict = Depends(get_current_user)):
-    user_id = current_user["id"]
-    try:
-        rows = db.get_analyses_for_user(user_id)
-        return {"history": rows}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def history(user=Depends(get_current_user)):
+    return await get_analysis_history(user["user_id"])
 
+
+@app.get("/api/history/{analysis_id}")
+async def history_details(
+    analysis_id: int,
+    user=Depends(get_current_user)
+):
+
+    result = await get_analysis_by_id(
+        analysis_id,
+        user["user_id"]
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail="Analysis not found"
+        )
+
+    return result
+
+
+# ------------------------
+# WEBSOCKET
+# ------------------------
 
 @app.websocket("/ws/progress/{analysis_id}")
 async def websocket_progress(websocket: WebSocket, analysis_id: str):
-    await websocket.accept()
-    ws_connections[str(analysis_id)] = websocket
+
+    await manager.connect(websocket, analysis_id)
+
     try:
         while True:
-            try:
-                await websocket.receive_text()
-            except WebSocketDisconnect:
-                break
-            except Exception:
-                await asyncio.sleep(0.5)
-    finally:
-        ws_connections.pop(str(analysis_id), None)
+            await websocket.receive_text()
+
+    except Exception:
+        manager.disconnect(websocket, analysis_id)
 
 
-if __name__ == "__main__":
-    import uvicorn
+# ------------------------
+# DEBUG ROUTE
+# ------------------------
 
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)
+@app.get("/test")
+def test():
+    return {"ok": True}

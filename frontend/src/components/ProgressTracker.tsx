@@ -1,12 +1,21 @@
-import React from "react";
+interface Props {
+  messages: string[];
+}
 
-export default function ProgressTracker({ messages }: { messages: string[] }) {
+export default function ProgressTracker({
+  messages
+}: Props) {
   return (
-    <div className="mt-4 p-3 bg-gray-800 rounded">
-      <h3 className="font-semibold mb-2">Progress</h3>
-      <ul className="space-y-1 text-sm">
-        {messages.map((m, i) => (
-          <li key={i} className="opacity-90">{m}</li>
+    <div className="mt-4 p-4 bg-slate-900 rounded">
+      <h2 className="font-bold mb-2">
+        Live Progress
+      </h2>
+
+      <ul className="space-y-2">
+        {messages.map((msg, i) => (
+          <li key={i} className="text-green-400">
+            ✓ {msg}
+          </li>
         ))}
       </ul>
     </div>

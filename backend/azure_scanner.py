@@ -1,107 +1,126 @@
 import json
-import shutil
 import subprocess
-from typing import Dict, List
+import shutil
+import os
 
 
-class AzureCLIError(Exception):
+class AzureScannerError(Exception):
     pass
 
 
-class AzNotInstalled(AzureCLIError):
-    pass
+def _get_az_path():
+    """
+    Find Azure CLI executable in Windows even if PATH is broken.
+    """
 
+    # 1. normal PATH lookup
+    az = shutil.which("az")
+    if az:
+        return az
 
-class AzNotLoggedIn(AzureCLIError):
-    pass
-
-
-class ResourceGroupNotFound(AzureCLIError):
-    pass
-
-
-def _get_az_path() -> str:
-    """Get the full path to the az CLI executable."""
-    # Try common locations
-    paths = [
+    # 2. Windows default install locations
+    possible_paths = [
         r"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
         r"C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
+        r"C:\Program Files\Azure\CLI\wbin\az.cmd",
     ]
-    for path in paths:
-        try:
-            subprocess.run([path, "--version"], capture_output=True, check=True)
+
+    for path in possible_paths:
+        if os.path.exists(path):
             return path
-        except:
-            pass
-    
-    # Fall back to PATH lookup
-    az_path = shutil.which("az")
-    if az_path:
-        return az_path
-    raise AzNotInstalled("Azure CLI ('az') not found")
+
+    return None
 
 
-AZ_PATH = None
+def _run_az_command(command):
+    az_path = _get_az_path()
 
-def _check_az_installed() -> None:
-    global AZ_PATH
-    if AZ_PATH is None:
-        AZ_PATH = _get_az_path()
+    if not az_path:
+        raise AzureScannerError(
+            "Azure CLI not found. Install Azure CLI: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli"
+        )
 
-
-def list_resource_groups() -> List[Dict]:
-    """Return a list of resource groups (name, location, id, tags).
-
-    Raises AzNotInstalled or AzNotLoggedIn on failure.
-    """
-    _check_az_installed()
     try:
-        res = subprocess.run([AZ_PATH, "group", "list", "-o", "json"], capture_output=True, text=True, check=True)
-        groups = json.loads(res.stdout)
-        return [
-            {"name": g.get("name"), "location": g.get("location"), "id": g.get("id"), "tags": g.get("tags") or {}}
-            for g in groups
-        ]
+        result = subprocess.run(
+            [az_path] + command[1:],  # replace "az" with full path
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        if not result.stdout:
+            return "[]"
+
+        return result.stdout
+
+    except FileNotFoundError:
+        raise AzureScannerError(
+            "Azure CLI executable not found or not accessible."
+        )
+
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").lower()
-        if "please run 'az login'" in stderr or "az login" in stderr or "not logged in" in stderr:
-            raise AzNotLoggedIn(stderr)
-        raise AzureCLIError(e.stderr or e.stdout or str(e))
+
+        if "az login" in stderr or "not logged in" in stderr:
+            raise AzureScannerError(
+                "Azure CLI not logged in. Run: az login"
+            )
+
+        raise AzureScannerError(
+            e.stderr or "Azure CLI command failed"
+        )
 
 
-def scan_resource_group(resource_group: str) -> List[Dict]:
-    """Scan resources in a resource group and return structured info.
+# -----------------------------
+# Resource Groups
+# -----------------------------
+def get_resource_groups():
+    output = _run_az_command([
+        "az",
+        "group",
+        "list",
+        "-o",
+        "json"
+    ])
 
-    Each resource dict contains: type, name, location, sku, tags
-    """
-    _check_az_installed()
-    try:
-        res = subprocess.run([AZ_PATH, "resource", "list", "--resource-group", resource_group, "-o", "json"], capture_output=True, text=True, check=True)
-        items = json.loads(res.stdout)
-        parsed = []
-        for it in items:
-            sku = None
-            sku_field = it.get("sku")
-            if isinstance(sku_field, dict):
-                sku = sku_field.get("name")
+    groups = json.loads(output)
 
-            # sometimes SKU is nested under properties.sku
-            props = it.get("properties") or {}
-            if not sku and isinstance(props.get("sku"), dict):
-                sku = props.get("sku").get("name")
+    return [
+        {
+            "name": g.get("name"),
+            "location": g.get("location")
+        }
+        for g in groups
+    ]
 
-            parsed.append({
-                "type": it.get("type"),
-                "name": it.get("name"),
-                "location": it.get("location"),
-                "sku": sku,
-                "tags": it.get("tags") or {},
-            })
-        return parsed
-    except subprocess.CalledProcessError as e:
-        stderr = (e.stderr or "").lower()
-        if "resource group" in stderr and "could not be found" in stderr:
-            raise ResourceGroupNotFound(stderr)
-        if "please run 'az login'" in stderr or "az login" in stderr or "not logged in" in stderr:
-            raise AzNotLoggedIn(stderr)
-        raise AzureCLIError(e.stderr or e.stdout or str(e))
+
+# -----------------------------
+# Resources in RG
+# -----------------------------
+def get_resources(resource_group):
+    output = _run_az_command([
+        "az",
+        "resource",
+        "list",
+        "--resource-group",
+        resource_group,
+        "-o",
+        "json"
+    ])
+
+    resources = json.loads(output)
+
+    parsed = []
+
+    for r in resources:
+        parsed.append({
+            "id": r.get("id"),
+            "name": r.get("name"),
+            "type": r.get("type"),
+            "location": r.get("location"),
+            "kind": r.get("kind"),
+            "sku": r.get("sku"),
+            "tags": r.get("tags", {})
+        })
+
+    return parsed

@@ -1,13 +1,23 @@
-import React from "react";
-import Login from "./pages/Login";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-export default function App() {
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import Dashboard from "./pages/Dashboard";
+import History from "./pages/History";
+import Report from "./pages/Report";
+
+function App() {
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <div className="max-w-3xl mx-auto p-4">
-        <h1 className="text-2xl font-bold mb-4">AI Cloud Cost Detective</h1>
-        <Login />
-      </div>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/report/:id" element={<Report />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
+
+export default App;

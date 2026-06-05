@@ -1,9 +1,9 @@
 fastapi
 uvicorn
-openai
 python-dotenv
-psycopg2-binary
-websockets
+asyncpg
 PyJWT
 bcrypt
-email-validator
+python-multipart
+requests
+websockets

@@ -1,86 +1,90 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import api from "../utils/api";
+import Navbar from "../components/Navbar";
 import ProgressTracker from "../components/ProgressTracker";
-
-function authFetch(input: RequestInfo, init?: RequestInit) {
-  const token = localStorage.getItem("token");
-  const headers = Object.assign({}, init?.headers || {}, { Authorization: `Bearer ${token}` });
-  return fetch(input, Object.assign({}, init || {}, { headers }));
-}
+import { createSocket } from "../utils/websocket";
+import { v4 as uuidv4 } from "uuid";
 
 export default function Dashboard() {
-  const [rgs, setRgs] = useState<string[]>([]);
-  const [selected, setSelected] = useState("");
-  const [messages, setMessages] = useState<string[]>([]);
-  const [analysisId, setAnalysisId] = useState<number | null>(null);
-  const [analysis, setAnalysis] = useState<any>(null);
+  const [resourceGroups, setResourceGroups] = useState<any[]>([]);
+  const [selectedRG, setSelectedRG] = useState("");
+  const [analysisId, setAnalysisId] = useState("");
+  const [progress, setProgress] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const res = await authFetch("/api/resource-groups");
-      if (res.ok) {
-        const data = await res.json();
-        setRgs(data.resource_groups.map((g: any) => g.name));
-        if (data.resource_groups.length) setSelected(data.resource_groups[0].name);
-      } else {
-        console.error("Failed to load resource groups");
+    const loadRG = async () => {
+      try {
+        const res = await api.get("/resource-groups");
+        setResourceGroups(res.data.resource_groups || []);
+      } catch (err) {
+        console.error("Failed to load RGs", err);
+        setResourceGroups([]);
       }
-    })();
+    };
+
+    loadRG();
   }, []);
 
   const runAnalysis = async () => {
-    setMessages([]);
-    setAnalysis(null);
-    const res = await authFetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resource_group: selected }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setAnalysisId(data.analysis_id);
-      const ws = new WebSocket(`ws://localhost:8000/ws/progress/${data.analysis_id}`);
-      ws.onmessage = (ev) => {
-        setMessages((m) => [...m, ev.data]);
-        if (ev.data === "Analysis complete") {
-          ws.close();
-          // fetch history and show the analysis details
-          (async () => {
-            const hr = await authFetch("/api/history");
-            if (hr.ok) {
-              const json = await hr.json();
-              const found = json.history.find((h: any) => h.id === data.analysis_id);
-              setAnalysis(found || null);
-            }
-          })();
-        }
-      };
-    } else {
-      alert(data.detail || "Failed to start analysis");
-    }
+    const id = uuidv4();
+
+    setAnalysisId(id);
+    setProgress([]);
+    setLoading(true);
+
+    const ws = createSocket(id);
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      setProgress((prev) => [...prev, data.message]);
+    };
+
+    ws.onopen = async () => {
+      await api.post("/analyze", {
+        resource_group: selectedRG,
+        analysis_id: id,
+      });
+    };
+
+    ws.onclose = () => setLoading(false);
   };
 
   return (
     <div>
-      <div className="mb-4">
-        <label className="block text-sm mb-1">Resource Group</label>
-        <select className="p-2 bg-gray-800 rounded w-full" value={selected} onChange={(e) => setSelected(e.target.value)}>
-          {rgs.map((rg) => (
-            <option key={rg} value={rg}>{rg}</option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <button className="px-4 py-2 bg-green-600 rounded" onClick={runAnalysis}>Run Analysis</button>
-      </div>
+      <Navbar />
 
-      <ProgressTracker messages={messages} />
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
 
-      {analysis && (
-        <div className="mt-4 p-4 bg-gray-800 rounded">
-          <h3 className="font-semibold">Analysis Result</h3>
-          <pre className="text-sm mt-2 overflow-auto max-h-64">{JSON.stringify(analysis, null, 2)}</pre>
+        <div className="mb-4">
+          <label className="block mb-2">Select Resource Group</label>
+
+          <select
+            className="p-2 border rounded text-black w-64"
+            onChange={(e) => setSelectedRG(e.target.value)}
+          >
+            <option value="">Select</option>
+            {resourceGroups.map((rg) => (
+              <option key={rg.name} value={rg.name}>
+                {rg.name}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
+
+        <button
+          disabled={!selectedRG || loading}
+          onClick={runAnalysis}
+          className="bg-blue-600 px-4 py-2 rounded text-white"
+        >
+          {loading ? "Analyzing..." : "Run Analysis"}
+        </button>
+
+        {progress.length > 0 && (
+          <ProgressTracker messages={progress} />
+        )}
+      </div>
     </div>
   );
 }
