@@ -30,7 +30,8 @@ export default function Report() {
 
   const analysis = data.analysis_result || {
     summary: "No data available",
-    issues: []
+    issues: [],
+    resources: [],
   };
 
   return (
@@ -38,6 +39,7 @@ export default function Report() {
       <Navbar />
 
       <div className="p-6 text-white">
+        {/* Report Overview */}
         <div className="bg-slate-900 p-4 rounded mb-6">
           <h1 className="text-xl font-bold">
             Cost Analysis Report
@@ -46,19 +48,51 @@ export default function Report() {
           <p>Resource Group: {data.resource_group}</p>
           <p>Resources: {data.resources_scanned}</p>
           <p>Issues: {data.issues_found}</p>
+
           <p className="text-green-400">
             Savings: {data.estimated_savings}
           </p>
         </div>
 
+        {/* Summary */}
         <div className="bg-slate-900 p-4 rounded mb-6">
           <h2 className="font-bold mb-2">Summary</h2>
           <p>{analysis.summary}</p>
         </div>
 
-        {analysis.issues && analysis.issues.length > 0 ? (
+        {/* Resources */}
+        <div className="bg-slate-900 p-4 rounded mb-6">
+          <h2 className="font-bold mb-2">Scanned Resources</h2>
+
+          {analysis.resources?.length > 0 ? (
+            <div className="space-y-2">
+              {analysis.resources.map((r: any, i: number) => (
+                <div
+                  key={i}
+                  className="text-sm border-b border-slate-700 py-2"
+                >
+                  <p>
+                    <strong>{r.name}</strong>
+                  </p>
+                  <p className="text-gray-400">{r.type}</p>
+                  <p className="text-gray-500">{r.location}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-400">
+              No resources information available.
+            </p>
+          )}
+        </div>
+
+        {/* Issues */}
+        {analysis.issues?.length > 0 ? (
           analysis.issues.map((issue: any, i: number) => (
-            <div key={i} className="bg-slate-900 p-4 rounded mb-4">
+            <div
+              key={i}
+              className="bg-slate-900 p-4 rounded mb-4"
+            >
               <h3 className="font-bold">
                 {issue.resource_name}
               </h3>

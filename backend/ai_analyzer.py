@@ -80,39 +80,57 @@ Resources:
 """
     
 
-def analyze_resources(resources):
+def analyze_resources(resources: list):
+    """
+    Converts Azure resources into:
+    - issues
+    - suggestions
+    - summary
+    """
 
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": build_prompt(resources),
-        "stream": False,
-        "format": "json"
+    issues = []
+    suggestions = []
+
+    for r in resources:
+
+        r_type = (r.get("type") or "").lower()
+
+        # -------------------------
+        # Example RULES (extend later with LLM)
+        # -------------------------
+
+        if "vm" in r_type:
+            issues.append({
+                "resource_name": r.get("name"),
+                "resource_type": r_type,
+                "issue_type": "Potential idle VM",
+                "severity": "medium",
+                "description": "VM may be underutilized.",
+                "business_impact": "Unnecessary compute cost",
+                "recommendation": "Enable auto-shutdown or resize",
+                "estimated_savings": "$20-80/month",
+                "best_practice": "Use auto-shutdown schedules",
+                "fix_command": "az vm deallocate --name <vm-name>"
+            })
+
+            suggestions.append({
+                "title": f"Optimize VM: {r.get('name')}",
+                "description": "Enable auto-shutdown or scaling policies",
+                "estimated_savings": "$20-80/month"
+            })
+
+        elif "disk" in r_type:
+            suggestions.append({
+                "title": f"Check disk usage: {r.get('name')}",
+                "description": "Consider moving to lower tier storage",
+                "estimated_savings": "$5-20/month"
+            })
+
+    return {
+        "summary": (
+            f"Scanned {len(resources)} resources. "
+            f"Found {len(issues)} optimization opportunities."
+        ),
+        "issues": issues,
+        "suggestions": suggestions
     }
-
-    response = requests.post(
-        OLLAMA_URL,
-        json=payload,
-        timeout=300
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    try:
-
-        return json.loads(
-            data["response"]
-        )
-
-    except Exception:
-
-        return {
-            "summary":
-            "Unable to parse model response.",
-
-            "estimated_total_monthly_savings":
-            "Unknown",
-
-            "issues": []
-        }
